@@ -201,7 +201,7 @@ create_hexes <- function(dir) {
   for(i in 1:5) {
     file.copy(
       from = here::here("img", paste0("hex", n, ".png")),
-      to = here::here("img", paste0("hex", n + 1, ".png"))
+      to = here::here("img", paste0("hex", n + i, ".png"))
     )
   }
   
