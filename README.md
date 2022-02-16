@@ -1,4 +1,5 @@
 
 # arrow-gif
 
-![](./img/output.gif)
+<img src="./img/output.gif" width=800px>
+
