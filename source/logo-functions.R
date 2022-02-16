@@ -1,0 +1,217 @@
+# generate Apache Arrow logos programmatically
+
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(tibble)
+library(showtext)
+library(magick)
+library(hexify) # remotes::install_github("djnavarro/hexify")
+library(svglite)
+
+
+export_logo <- function(plot, path, width = 6, height = 6, background = NULL, device = NULL, ...) {
+  ggsave(path, plot, width = width, height = height, dpi = 300, bg = background, device = device, ...)
+}
+
+export_hex <- function(plot, path, border, background = NULL, border_opacity = 100) {
+  
+  # intermediate files
+  imgpath1 <- tempfile(fileext = ".png")  
+  imgpath2 <- tempfile(fileext = ".png")
+  
+  # export square image to standard 1800x1800 size
+  export_logo(plot, path = imgpath1, background = background)
+  
+  # crop the image slightly
+  img <- image_read(imgpath1)
+  img <- image_crop(img, "1300x1300", "Center")
+  image_write(img, imgpath2)
+  
+  # generate the hex sticker
+  hexify(
+    from = imgpath2,
+    to = path,
+    border_colour = border,
+    border_opacity = border_opacity
+  )
+  
+  # ensure magick pointers are collected
+  invisible(gc())
+}
+
+generate_chevron <- function() {
+  tibble(
+    x = c(0, .5, 0, 0, .3, 0, 0),
+    y = c(1, .5, 0, .2, .5, .8, 1)
+  )
+}
+
+generate_logomark <- function(chevrons) {
+  generate_chevron() %>% 
+    expand_grid(id = chevrons, .) %>% 
+    mutate(x = x + id * .35)
+}
+
+generate_logotype <- function(text) {
+  # TODO: ggplot2 specifies text dimensions in physical units
+  # not data units, which means that text rescales as the 
+  # image rescales. The current settings work for the 1800px
+  # images, but more generally it would might be nice to 
+  # find out how to control text height exactly in ggplot2
+  tibble(
+    x = c(-1.605, 0),
+    y = c(.8, .495),
+    text = text,
+    font = c("Roboto", "Barlow"),
+    weight = c("plain", "bold"),
+    size = c(21, 60.5), # <- the intent is really a 3:1 ratio in font size
+    hjust = c("left", "right"),
+    vjust = c("center", "center")
+  )
+} 
+
+specify_plot <- function(logotype, logomark, colour, background, x_lim, y_lim) {
+  ggplot() +
+    geom_polygon(
+      data = logomark,
+      mapping = aes(x, y, group = id),
+      fill = colour,
+      colour = colour,
+    ) +
+    geom_text(
+      data = logotype,
+      mapping = aes(
+        x, y,
+        label = text,
+        family = font,
+        size = size,
+        fontface = weight,
+        hjust = hjust,
+        vjust = vjust
+      ),
+      colour = colour
+    ) +
+    coord_equal() +
+    scale_size_identity() +
+    theme_void() +
+    theme(panel.background = element_rect(
+      fill = background, colour = background
+    )) + 
+    scale_x_continuous(limits = x_lim, expand = c(0, 0)) +
+    scale_y_continuous(limits = y_lim, expand = c(0, 0)) +
+    NULL
+}
+
+specify_hex <- function(colour = "black", background = "white", text, chevrons) {
+  
+  # load fonts
+  font_add_google("Roboto")
+  font_add_google("Barlow")
+  showtext_auto()
+  
+  # create the two components
+  arrow_text <- generate_logotype(text)
+  triple_chevron <- generate_logomark(chevrons)
+  
+  # displacement text/arrow blocks 
+  # relative to their horizontal location
+  arrow_text <- arrow_text %>% 
+    mutate(
+      x = x + 1.3,
+      y = y + .4
+    )
+  triple_chevron <- triple_chevron %>% 
+    mutate(
+      x = x - .0125,
+      y = y - .4
+    )
+  
+  # specify plot limits
+  x_limit <- c(-1.375, 2.375)
+  y_limit <- c(-1.375, 2.375)
+  
+  # construct plot
+  pic <- specify_plot(arrow_text, triple_chevron, colour, 
+                      background, x_limit, y_limit)
+  
+  # invisibly return the ggplot object: note that this object won't
+  # render the way you want it to unless you export it in the exact 
+  # width, height and dpi settings per export_hex()
+  return(invisible(pic))
+}
+
+
+
+create_hex <- function(dir, 
+                       colour = "black", 
+                       background = "white", 
+                       border = "black", 
+                       text = c("APACHE", "ARROW"), 
+                       chevrons = 0:2, 
+                       n = 0) {
+  pic <- specify_hex(colour, background, text, chevrons)
+  fname <- file.path(dir, paste0("hex", n, ".png"))
+  export_hex(
+    plot = pic,
+    path = fname, 
+    border = border, 
+    background = background,
+    border_opacity = 100
+  )
+  
+  img <- image_read(fname) %>% 
+    image_extent("2500x2500")
+  image_write(img, fname)
+}
+
+create_hexes <- function(dir) {
+  dir <- here::here("img")
+  n <- 1000
+  apache <- c("A", "P", "A", "C", "H", "E")
+  arrow <- c("A", "R", "R", "O", "W")
+  
+  txt1 <- ""
+  txt2 <- ""
+  chevrons <- numeric(0)
+  
+  cat(n, "\n")
+  create_hex(dir, text = c(txt1, txt2), chevrons = chevrons, n = n)
+  
+  for(i in 1:length(apache)) {
+    n <- n + 1
+    cat(n, "\n")
+    txt1 <- paste(apache[1:i], collapse = "")
+    create_hex(dir, text = c(txt1, txt2), chevrons = chevrons, n = n)
+  }
+
+  for(i in 1:length(arrow)) {
+    n <- n + 1
+    cat(n, "\n")
+    txt2 <- paste(arrow[1:i], collapse = "")
+    create_hex(dir, text = c(txt1, txt2), chevrons = chevrons, n = n)
+  }
+  
+  for(i in 0:2) {
+    n <- n + 1
+    cat(n, "\n")
+    create_hex(dir, text = c(txt1, txt2), chevrons = 0:i, n = n)
+  }
+  
+  for(i in 1:5) {
+    file.copy(
+      from = here::here("img", paste0("hex", n, ".png")),
+      to = here::here("img", paste0("hex", n + 1, ".png"))
+    )
+  }
+  
+  
+  gc()
+  
+}
+
+# imagemagick:
+# convert -resize 32% -delay 20 -loop 0 *.png output.gif
+
+
+
